@@ -12,7 +12,7 @@ franka = scene.add_entity(
     #     file='urdf/panda_bullet/panda.urdf',
     #     fixed=True,
     # ),
-    gs.morphs.URDF(file="./panda.xml"),
+    gs.morphs.URDF(file="./leo_sim.urdf"),
 )
 
 def run_sim(scene): 
