@@ -27,13 +27,15 @@ class LeoRoverEnv:
         # Paramètres de base : vitesses, fréquences, etc.
         # ---------------------------------------------------
         self.dt = 0.02            # 50 Hz
-        self.max_episode_length = 500  # nombre de steps maxi
-        self.num_actions = 4
+        self.max_episode_length = 2000  # nombre de steps maxi
 
-        self.num_obs = 10
+
+        self.num_obs = 6
         self.num_privileged_obs = None
+        self.target_pos = torch.tensor([target_pos], dtype=torch.float, device=self.device).repeat(num_envs, 1)
+        self.ball_pos = torch.tensor([(2.0, 2.0, 2.0)], dtype=torch.float, device=self.device).repeat(num_envs, 1)
+        self.num_actions = 2 #torch.zeros((num_envs,self.num_obs),device = self.device, dtype = gs.tc_float)
 
-        self.target_pos = torch.tensor(target_pos, dtype=torch.float, device=self.device).repeat(num_envs, 1)
 
         # ---------------------------------------------------
         # Création de la scène Genesis
@@ -59,6 +61,15 @@ class LeoRoverEnv:
             vis_options=vis_options,
             rigid_options=rigid_options,
             show_viewer=show_viewer,
+        )
+
+        self.target = self.scene.add_entity(
+                morph=gs.morphs.Mesh(
+                    file="meshes/sphere.obj",
+                    scale=0.05,
+                    fixed=True,
+                    collision=False,
+                )
         )
 
         # ---------------------------------------------------
@@ -92,10 +103,10 @@ class LeoRoverEnv:
         self.motor_dofs = [self.robot.get_joint(name).dof_idx_local for name in self.dof_names]
 
         # Paramètres de base pour le control (PD ou direct velocity)
-        self.kp = 0.0    # si on contrôle en vitesse
-        self.kd = 0.0
-        self.robot.set_dofs_kp([self.kp] * self.num_actions, self.motor_dofs)
-        self.robot.set_dofs_kv([self.kd] * self.num_actions, self.motor_dofs)
+        self.kp = 1_000_000    # si on contrôle en vitesse
+        self.kd = 1.0
+        self.robot.set_dofs_kp([self.kp] * len(self.motor_dofs), self.motor_dofs)
+        self.robot.set_dofs_kv([self.kd] * len(self.motor_dofs), self.motor_dofs)
 
         # Buffers
         self.obs_buf = torch.zeros((self.num_envs, self.num_obs), device=self.device)
@@ -103,53 +114,61 @@ class LeoRoverEnv:
         self.rew_buf = torch.zeros((self.num_envs,), dtype=torch.float, device=self.device)
         self.episode_length_buf = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
 
+        self.actions = torch.zeros((self.num_envs, self.num_actions), device=self.device, dtype=gs.tc_float)  # Linear and angular commands
+
+
+
         # Vitesse lin/ang de la base
         self.base_lin_vel = torch.zeros((self.num_envs, 3), device=self.device)
         self.base_ang_vel = torch.zeros((self.num_envs, 3), device=self.device)
-        self.dof_vel = torch.zeros((self.num_envs, self.num_actions), device=self.device)
 
         # Pose du rover
         self.base_pos = torch.zeros((self.num_envs, 3), device=self.device)
-        self.base_quat = torch.zeros((self.num_envs, 4), device=self.device)
+        self.last_dist_to_target = torch.norm(self.target_pos - self.base_pos[:, 0:2], dim=-1)
+        #feedback 
+        self.last_actions = torch.zeros_like(self.actions)
+
+        #  position du over moment du spawn
+        #self.base_pos = torch.zeros((self.num_envs, 3), device=self.device, dtype=gs.tc_float)
+        self.dof_vel = torch.zeros((self.num_envs, len(self.motor_dofs)), device=self.device)
+
+        #self.base_quat = torch.zeros((self.num_envs, 4), device=self.device)
 
     def step(self, actions):
         """
-        Avance la simulation d'un pas en appliquant l'action.
-        actions shape: (num_envs, 4) => vitesses pour chaque roue
+        Advances the simulation by one step, applying linear and angular commands.
+        actions: [N, 2] -> linear and angular velocities for each environment
         """
-        # Appliquer directement les actions comme des cibles de vitesse
-        # sur les joints. On doit convertir [rad/s] => [deg/s] si necessary.
-        # Ici, on suppose que l'action est déjà dans le bon ordre de grandeur.
-        target_velocity_deg = actions * 180.0 / math.pi  # exemple
-        self.robot.control_dofs_velocity(target_velocity_deg, self.motor_dofs)
+        # Clip actions to valid ranges
+        self.actions = torch.clip(actions, -4, 4)
 
-        # Avancer la simulation
+        self.episode_length_buf += 1
+        # Convert linear and angular commands to wheel velocities (example logic)
+        linear_vel = self.actions[:, 0:1]  # Linear velocity [N, 1]
+        angular_vel = self.actions[:, 1:2]  # Angular velocity [N, 1]
+
+        # Assume a simple differential drive model for the rover
+        wheel_base = 0.359 
+        left_wheel_vel = linear_vel - (angular_vel * wheel_base / 2)
+        right_wheel_vel = linear_vel + (angular_vel * wheel_base / 2)
+        wheel_velocities = torch.cat([left_wheel_vel, right_wheel_vel, left_wheel_vel, right_wheel_vel], dim=-1)  # Shape: [N, 4]
+
+        # Control the robot's wheels
+        self.robot.control_dofs_velocity(wheel_velocities, self.motor_dofs)
+
+        # Advance the simulation
         self.scene.step()
 
-        # Mettre à jour les buffers
-        self.episode_length_buf += 1
-
-        self.base_pos[:] = self.robot.get_pos()
-        self.base_quat[:] = self.robot.get_quat()
-        inv_quat_ = inv_quat(self.base_quat)
-        self.base_lin_vel[:] = transform_by_quat(self.robot.get_vel(), inv_quat_)
-        self.base_ang_vel[:] = transform_by_quat(self.robot.get_ang(), inv_quat_)
-        vel_joints = self.robot.get_dofs_velocity(self.motor_dofs)
-        self.dof_vel[:] = vel_joints
-
-        # Calcul des récompenses
+        # Update observations, rewards, and termination conditions
+        self._compute_observations()
         self._compute_reward()
-
-        # Vérifier terminaisons
         self.reset_buf = self._check_termination()
 
-        # Reset de ceux qui terminent
+        # Reset environments that have finished
         self.reset_idx(self.reset_buf.nonzero(as_tuple=False).flatten())
 
-        # Observations
-        self._compute_observations()
-
         return self.obs_buf, None, self.rew_buf, self.reset_buf, {}
+
 
     def reset(self):
         """
@@ -178,46 +197,51 @@ class LeoRoverEnv:
         # Ex: target_pos X et Y dans [1, 3]
         self.target_pos[env_ids, 0] = gs_rand_float(1.0, 3.0, (len(env_ids),), self.device)
         self.target_pos[env_ids, 1] = gs_rand_float(1.0, 3.0, (len(env_ids),), self.device)
-
+        self.ball_pos[env_ids, 0] = self.target_pos[env_ids, 0]
+        self.ball_pos[env_ids, 1] = self.target_pos[env_ids, 1]
+        self.ball_pos[env_ids, 2] = gs_rand_float(1.0, 3.0, (len(env_ids),), self.device)
         # Remise à zéro des compteurs
         self.episode_length_buf[env_ids] = 0
         self.reset_buf[env_ids] = 0
+        self.last_actions[env_ids] = torch.zeros(len(env_ids), self.num_actions, device=self.device)
+        
+        self.target.set_pos(self.ball_pos[env_ids], zero_velocity=True, envs_idx=env_ids)
 
-        # Recalcule la première obs
         self._compute_observations()
 
     def _compute_observations(self):
 
         rover_xy = self.base_pos[:, 0:2]  # [N, 2]
-        
-        to_target = (self.target_pos - rover_xy)
-        dist_to_target = torch.norm(to_target, dim=-1, keepdim=True)  
-        dir_to_target = to_target / (dist_to_target + 1e-6)           
-        lin_vel_xy = self.base_lin_vel[:, 0:2] 
+        #to_target = (self.target_pos - rover_xy)
 
-       
+        #dist_to_target = torch.norm(to_target, dim=-1, keepdim=True)  
+        #dir_to_target = to_target / (dist_to_target + 1e-6)           
+        lin_vel_xy = self.base_lin_vel[:, 0:1] 
         ang_vel_z = self.base_ang_vel[:, 2:3]   
 
    
         self.obs_buf = torch.cat(
             [
-                lin_vel_xy,   # 2
-                ang_vel_z,    # 1
-                dir_to_target,   # 2
-                dist_to_target,  # 1
-                self.dof_vel,    # 4
+                rover_xy,   # rover xy
+                self.target_pos,    # target position
+                self.last_actions, #son petit feedback
             ],
             dim=-1
         )
+
+        self.last_actions[:] = self.actions[:]
+
 
     def _compute_reward(self):
         rover_xy = self.base_pos[:, 0:2]
         dist_to_target = torch.norm(self.target_pos - rover_xy, dim=-1)
         rew_dist = -dist_to_target
-        rew_reach = (dist_to_target < 0.2).float() * 5.0  
+        rew_reach = (dist_to_target < 0.2).float() * 5.0
 
-        speed_penalty = -0.01 * torch.sum(self.dof_vel**2, dim=-1)
-        self.rew_buf[:] = rew_dist + rew_reach + speed_penalty
+        delta = dist_to_target - self.last_dist_to_target
+        self.last_dist_to_target = dist_to_target
+
+        self.rew_buf[:] = rew_dist + delta
 
     def _check_termination(self):
         done = torch.zeros((self.num_envs,), dtype=torch.bool, device=self.device)

@@ -31,7 +31,7 @@ def main():
     # Charger la configuration de l'entraînement
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Configuration non trouvée : {config_path}")
-    env_cfg, train_cfg, urdf_path  = pickle.load(open(config_path, "rb"))
+    train_cfg, urdf_path  = pickle.load(open(config_path, "rb"))
 
     
 
@@ -42,18 +42,18 @@ def main():
         num_envs=1,  # Une seule instance pour l'évaluation
         urdf_path=r"../URDF/leo_sim.urdf",
         show_viewer=args.show_viewer,  # Affiche ou non la visualisation
-        device="mps",
+        device="cuda",
     )
 
     # Chargement du modèle entraîné
-    runner = OnPolicyRunner(env, train_cfg, log_dir, device="mps")
+    runner = OnPolicyRunner(env, train_cfg, log_dir, device="cuda")
     model_path = os.path.join(log_dir, f"model_{args.ckpt}.pt")
     if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Checkpoint non trouvé : {model_path}")
+        raise FileNotFoundError(f"Checkpoint non trouvé : {model_path}.pt")
     runner.load(model_path)
 
     # Récupérer la politique pour l'inférence
-    policy = runner.get_inference_policy(device="mps")
+    policy = runner.get_inference_policy(device="cuda")
 
     # Démarrage de l'évaluation
     obs, _ = env.reset()

@@ -74,22 +74,21 @@ def main():
         num_envs=args.num_envs,
         urdf_path=args.urdf_path,
         show_viewer=False,
-        device="mps"
+        device="cuda"
     )
 
     # Configuration d’entraînement
     train_cfg = get_train_cfg(args.exp_name, args.max_iterations)
 
     # Création du runner OnPolicy (PPO, etc.)
-    runner = OnPolicyRunner(env, train_cfg, log_dir, device="mps")
+    runner = OnPolicyRunner(env, train_cfg, log_dir, device="cuda")
 
     # Sauvegarde de la config
     pickle.dump(
-        {
-            "env_cfg": None,
-            "train_cfg": train_cfg,
-            "urdf_path": args.urdf_path,
-        },
+        [
+            train_cfg,
+            args.urdf_path,
+        ],
         open(f"{log_dir}/cfgs.pkl", "wb"),
     )
 
