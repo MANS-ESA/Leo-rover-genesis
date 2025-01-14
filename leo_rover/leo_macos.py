@@ -12,7 +12,7 @@ def main():
     args = parser.parse_args()
 
     ########################## init ##########################
-    gs.init(backend=gs.cpu)
+    gs.init(backend=gs.metal)
 
     ########################## create a scene ##########################
 
@@ -29,6 +29,14 @@ def main():
         ),
     )
 
+    cam = scene.add_camera(
+        res    = (1280, 960),
+        pos    = (3.5, 0.0, 2.5),
+        lookat = (0, 0, 0.5),
+        fov    = 30,
+        GUI    = True
+    )
+
     ########################## entities ##########################
     plane = scene.add_entity(gs.morphs.Plane())
     r0 = scene.add_entity(
@@ -40,22 +48,19 @@ def main():
 
     ########################## build ##########################
     scene.build()
-
-    gs.tools.run_in_another_thread(fn=run_sim, args=(scene, args.vis))
+    gs.tools.run_in_another_thread(fn=run_sim, args=(scene, args.vis, cam))
     if args.vis:
         scene.viewer.start()
 
 
-def run_sim(scene, enable_vis):
+def run_sim(scene, enable_vis, cam):
     from time import time
 
     t_prev = time()
     i = 0
     while True:
         i += 1
-
         scene.step()
-
         t_now = time()
         print(1 / (t_now - t_prev), "FPS")
         t_prev = t_now

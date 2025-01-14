@@ -4,7 +4,7 @@ gs.init(backend=gs.cuda)
 scene = gs.Scene(show_viewer=True)
 plane = scene.add_entity(gs.morphs.Plane())
 franka = scene.add_entity(
-    gs.morphs.URDF(file='./leo_sim.urdf'),
+    gs.morphs.URDF(file='./URDF/leo_sim.urdf'),
 )
 
 scene.build()

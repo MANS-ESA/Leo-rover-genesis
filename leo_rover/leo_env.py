@@ -15,10 +15,10 @@ class LeoRoverEnv:
     def __init__(
         self,
         num_envs=4096,
-        urdf_path=r"C:\Users\flori\Downloads\my_leo_robot\leo_sim.urdf",
+        urdf_path=r"../URDF/leo_sim.urdf",
         target_pos=(2.0, 2.0),   # Coordonnée cible XY (exemple)
         show_viewer=False,
-        device="cuda:0",
+        device="mps",
     ):
         self.device = torch.device(device)
         self.num_envs = num_envs
@@ -65,7 +65,7 @@ class LeoRoverEnv:
         # Ajout d’un plan de base + rover
         # ---------------------------------------------------
         # Le plan
-        self.scene.add_entity(gs.morphs.URDF(file="urdf/plane/plane.urdf", fixed=True))
+        self.scene.add_entity(gs.morphs.Plane())
 
         # Le rover (Leo)
         # Remplacez par le chemin correct vers votre URDF

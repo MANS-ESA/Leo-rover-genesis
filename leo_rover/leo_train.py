@@ -5,7 +5,6 @@ import shutil
 
 import genesis as gs
 import torch
-
 from rsl_rl.runners import OnPolicyRunner
 from leo_env import LeoRoverEnv  
 
@@ -57,12 +56,12 @@ def get_train_cfg(exp_name, max_iterations):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-e", "--exp_name", type=str, default="leo-rover-run")
-    parser.add_argument("-B", "--num_envs", type=int, default=1024)
+    parser.add_argument("-B", "--num_envs", type=int, default=2000)
     parser.add_argument("--max_iterations", type=int, default=3000)
-    parser.add_argument("--urdf_path", type=str, default=r"C:\Users\flori\Downloads\my_leo_robot\leo_sim.urdf")
+    parser.add_argument("--urdf_path", type=str, default=r"../URDF/leo_sim.urdf")
     args = parser.parse_args()
 
-    gs.init(logging_level="info")
+    gs.init(logging_level="error") #info si voir FPS
 
     # Création d’un dossier de logs
     log_dir = f"logs/{args.exp_name}"
@@ -75,14 +74,14 @@ def main():
         num_envs=args.num_envs,
         urdf_path=args.urdf_path,
         show_viewer=False,
-        device="cuda:0"
+        device="mps"
     )
 
     # Configuration d’entraînement
     train_cfg = get_train_cfg(args.exp_name, args.max_iterations)
 
     # Création du runner OnPolicy (PPO, etc.)
-    runner = OnPolicyRunner(env, train_cfg, log_dir, device="cuda:0")
+    runner = OnPolicyRunner(env, train_cfg, log_dir, device="mps")
 
     # Sauvegarde de la config
     pickle.dump(
