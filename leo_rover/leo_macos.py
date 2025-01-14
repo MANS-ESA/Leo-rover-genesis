@@ -1,7 +1,7 @@
 import argparse
 
 import torch
-
+import numpy as np
 import genesis as gs
 
 
@@ -41,13 +41,53 @@ def main():
     plane = scene.add_entity(gs.morphs.Plane())
     r0 = scene.add_entity(
         gs.morphs.URDF(
-            file="./leo_sim.urdf",
+            file="../URDF/leo_sim.urdf",
             pos=(0, 0, 0)
         ),
     )
 
     ########################## build ##########################
     scene.build()
+
+    jnt_names = [
+        'wheel_FL_joint',
+        'wheel_RL_joint',
+        'wheel_FR_joint',
+        'wheel_RR_joint',
+    ]
+
+    dofs_idx = [r0.get_joint(name).dof_idx_local for name in jnt_names]
+
+    # set positional gains
+    r0.set_dofs_kp(
+        kp             = np.array([1_000_000, 1_000_000, 1_000_000, 1_000_000]),
+        dofs_idx_local = dofs_idx,
+    )
+    # set velocity gains
+    r0.set_dofs_kv(
+        kv             = np.array([1.0, 1.0, 1.0, 1.0]),
+        dofs_idx_local = dofs_idx,
+    )
+
+    linear_vel = 0.2
+    angular_vel = 1
+
+    wheel_base = 0.359
+    left_wheel_vel = linear_vel - (angular_vel * wheel_base / 2)
+    right_wheel_vel = linear_vel + (angular_vel * wheel_base / 2)
+
+    left_wheel_vel_deg = left_wheel_vel * (180 / torch.pi)  # Convertir en °/s
+    right_wheel_vel_deg = right_wheel_vel * (180 / torch.pi)  # Convertir en °/s
+    print(left_wheel_vel_deg)
+
+    #wheel_velocities = torch.cat([left_wheel_vel_deg, right_wheel_vel_deg, left_wheel_vel_deg, right_wheel_vel_deg], dim=-1)  # Shape: [N, 4]
+
+
+    r0.control_dofs_velocity(
+                np.array([left_wheel_vel_deg, left_wheel_vel_deg, right_wheel_vel_deg, right_wheel_vel_deg]),
+                dofs_idx,
+            )
+
     gs.tools.run_in_another_thread(fn=run_sim, args=(scene, args.vis, cam))
     if args.vis:
         scene.viewer.start()
@@ -64,7 +104,7 @@ def run_sim(scene, enable_vis, cam):
         t_now = time()
         print(1 / (t_now - t_prev), "FPS")
         t_prev = t_now
-        if i > 1000:
+        if i > 5000:
             break
 
     if enable_vis:

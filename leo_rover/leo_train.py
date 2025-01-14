@@ -53,37 +53,79 @@ def get_train_cfg(exp_name, max_iterations):
     }
     return train_cfg_dict
 
+
+
+def get_cfgs():
+    env_cfg = {
+        "num_actions": 2,
+        # base pose
+        "base_init_pos": [0.0, 0.0, 1.0],
+        "base_init_quat": [1.0, 0.0, 0.0, 0.0],
+        "episode_length_s": 15.0,
+        "at_target_threshold": 0.1,
+        # visualization
+        "visualize_target": False,
+        "visualize_camera": False,
+        "max_visualize_FPS": 60,
+    }
+    obs_cfg = {
+        "num_obs": 5,
+        "obs_scales": {
+            "rel_pos": 1 / 3.0,
+            "lin_vel": 1 / 3.0,
+            "ang_vel": 1 / 3.14159,
+        },
+    }
+    reward_cfg = {
+        "reward_scales": {
+            "target": 10.0,
+            "smooth": -1e-4,
+        },
+    }
+    command_cfg = {
+        "num_commands": 3,
+        "pos_x_range": [-2.0, 2.0],
+        "pos_y_range": [0.1, 0.15],
+        "pos_z_range": [-2.0, 2.0],
+    }
+
+    return env_cfg, obs_cfg, reward_cfg, command_cfg
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-e", "--exp_name", type=str, default="leo-rover-run")
+    parser.add_argument("-v", "--vis", action="store_true", default=False)
     parser.add_argument("-B", "--num_envs", type=int, default=2000)
     parser.add_argument("--max_iterations", type=int, default=3000)
     parser.add_argument("--urdf_path", type=str, default=r"../URDF/leo_sim.urdf")
+    parser.add_argument("--device", type=str, default=r"mps")
     args = parser.parse_args()
 
     gs.init(logging_level="error") #info si voir FPS
 
-    # Création d’un dossier de logs
     log_dir = f"logs/{args.exp_name}"
+    env_cfg, obs_cfg, reward_cfg, command_cfg = get_cfgs()
+    train_cfg = get_train_cfg(args.exp_name, args.max_iterations)
     if os.path.exists(log_dir):
         shutil.rmtree(log_dir)
     os.makedirs(log_dir, exist_ok=True)
 
-    # Création de l’environnement
+    if args.vis:
+        env_cfg["visualize_target"] = True
+
     env = LeoRoverEnv(
         num_envs=args.num_envs,
         urdf_path=args.urdf_path,
+        env_cfg=env_cfg,
+        obs_cfg=obs_cfg,
+        reward_cfg=reward_cfg,
+        command_cfg=command_cfg,
         show_viewer=False,
-        device="cuda"
+        device=args.device
     )
 
-    # Configuration d’entraînement
-    train_cfg = get_train_cfg(args.exp_name, args.max_iterations)
+    runner = OnPolicyRunner(env, train_cfg, log_dir, device=args.device)
 
-    # Création du runner OnPolicy (PPO, etc.)
-    runner = OnPolicyRunner(env, train_cfg, log_dir, device="cuda")
-
-    # Sauvegarde de la config
     pickle.dump(
         [
             train_cfg,
@@ -92,7 +134,7 @@ def main():
         open(f"{log_dir}/cfgs.pkl", "wb"),
     )
 
-    # Lancement de l’apprentissage
+    # Start learning
     runner.learn(num_learning_iterations=args.max_iterations, init_at_random_ep_len=True)
 
 if __name__ == "__main__":
