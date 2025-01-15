@@ -92,7 +92,11 @@ class LeoRoverEnv:
         # Add Leo Rover
         self.base_init_pos = torch.tensor(self.env_cfg["base_init_pos"], device=self.device)
         self.base_init_quat = torch.tensor(self.env_cfg["base_init_quat"], device=self.device)
-        self.robot = self.scene.add_entity(gs.morphs.URDF(file=urdf_path))
+        self.robot = self.scene.add_entity(gs.morphs.URDF(
+            file=urdf_path,
+            pos=self.base_init_pos.cpu().numpy(),
+            quat=self.base_init_quat.cpu().numpy(),
+        ))
 
         # build scene
         self.scene.build(n_envs=self.num_envs)
@@ -137,32 +141,41 @@ class LeoRoverEnv:
 
         self.extras = dict()  # extra information for logging
 
-        
+    def _resample_commands(self, envs_idx):
+        self.commands[envs_idx, 0] = gs_rand_float(*self.command_cfg["pos_x_range"], (len(envs_idx),), self.device)
+        self.commands[envs_idx, 1] = gs_rand_float(*self.command_cfg["pos_y_range"], (len(envs_idx),), self.device)
+        self.commands[envs_idx, 2] = gs_rand_float(*self.command_cfg["pos_z_range"], (len(envs_idx),), self.device)
+        if self.target is not None:
+            self.target.set_pos(self.commands[envs_idx], zero_velocity=True, envs_idx=envs_idx)
+
+    def _at_target(self):
+        at_target = (
+            (torch.norm(self.rel_pos, dim=1) < self.env_cfg["at_target_threshold"]).nonzero(as_tuple=False).flatten()
+        )
+        return at_target
 
     def step(self, actions):
 
         # Clip actions to valid ranges
         #self.actions = torch.clip(actions, -0.4, 0.4)
-        self.actions = actions
-        self.actions = self.actions.cpu()
+        self.actions = torch.clip(actions, -self.env_cfg["clip_actions"], self.env_cfg["clip_actions"])
+        #self.actions = self.actions.cpu()
 
 
-        print(f"Actions :  {actions}")
+        #print(f"Actions :  {actions}")
 
         linear_vel = self.actions[:, 0:1]  # Linear velocity [m/s, 1]
         angular_vel = self.actions[:, 1:2]  # Angular velocity [rad/s, 1]
 
-        print(f"Linear :{linear_vel}")
-        print(f"Angular :{angular_vel}")
-
-
+        #print(f"Linear :{linear_vel}")
+        #print(f"Angular :{angular_vel}")
 
         wheel_base = 0.359
         left_wheel_vel = linear_vel - (angular_vel * wheel_base / 2)
         right_wheel_vel = linear_vel + (angular_vel * wheel_base / 2)
 
-        left_wheel_vel_deg = left_wheel_vel * (180 / torch.pi)  # Convertir en °/s
-        right_wheel_vel_deg = right_wheel_vel * (180 / torch.pi)  # Convertir en °/s
+        left_wheel_vel_deg = left_wheel_vel * (180 / torch.pi)
+        right_wheel_vel_deg = right_wheel_vel * (180 / torch.pi)
 
         self.robot.control_dofs_velocity(
             torch.cat([left_wheel_vel_deg, right_wheel_vel_deg, left_wheel_vel_deg, right_wheel_vel_deg], dim=-1)
@@ -175,8 +188,14 @@ class LeoRoverEnv:
         self.episode_length_buf += 1
         self.last_base_pos[:] = self.base_pos[:]
         self.base_pos[:] = self.robot.get_pos()
+        print(f"robot.getpos {self.robot.get_pos()}")
+        print(f"base pos : {self.base_pos}")
         self.rel_pos = self.commands - self.base_pos
         self.last_rel_pos = self.commands - self.last_base_pos
+
+        # resample commands
+        envs_idx = self._at_target()
+        self._resample_commands(envs_idx)
 
         # check termination and reset
         self.reset_buf = (self.episode_length_buf > self.max_episode_length)
@@ -189,10 +208,12 @@ class LeoRoverEnv:
 
         # compute reward
         self.rew_buf[:] = 0.0
+        #print(f"Rewards : {self.reward_functions.items()}")
         for name, reward_func in self.reward_functions.items():
             rew = reward_func() * self.reward_scales[name]
             self.rew_buf += rew
             self.episode_sums[name] += rew
+
 
         # compute observations
         self.obs_buf = torch.cat(
@@ -200,18 +221,18 @@ class LeoRoverEnv:
                 torch.clip(self.rel_pos * self.obs_scales["rel_pos"], -1, 1),
                 self.last_actions,
             ],
-            dim=-1
+            axis=-1
         )
         self.last_actions[:] = self.actions[:]
 
-
-        return self.obs_buf, None, self.rew_buf, self.reset_buf, {}
+        return self.obs_buf, None, self.rew_buf, self.reset_buf, self.extras
 
 
     def reset(self):
         """
         Reset complet de tous les environnements
         """
+        self.reset_buf[:] = True
         env_ids = torch.arange(self.num_envs, device=self.device)
         self.reset_idx(env_ids)
         return self.obs_buf, None
@@ -225,6 +246,7 @@ class LeoRoverEnv:
         self.last_base_pos[env_ids] = self.base_init_pos
         self.rel_pos = self.commands - self.base_pos
         self.last_rel_pos = self.commands - self.last_base_pos
+        print(f"Base pos : {self.base_pos}")
         self.robot.set_pos(self.base_pos[env_ids], zero_velocity=True, envs_idx=env_ids)
         self.robot.set_quat(self.base_quat[env_ids], zero_velocity=True, envs_idx=env_ids)
         self.base_lin_vel[env_ids] = 0
@@ -243,15 +265,14 @@ class LeoRoverEnv:
             )
             self.episode_sums[key][env_ids] = 0.0
 
-
-        self.commands[env_ids, 0] = gs_rand_float(*self.command_cfg["pos_x_range"], (len(env_ids),), self.device)
-        self.commands[env_ids, 1] = gs_rand_float(*self.command_cfg["pos_y_range"], (len(env_ids),), self.device)
-        self.commands[env_ids, 2] = gs_rand_float(*self.command_cfg["pos_z_range"], (len(env_ids),), self.device)
-        if self.target is not None:
-            self.target.set_pos(self.commands[env_ids], zero_velocity=True, envs_idx=env_ids)
+        self._resample_commands(env_ids)
+        print(f"Robot pos : {self.robot.get_pos()}")
 
     def _reward_target(self):
+        #print(f"last_rel_pos : {self.last_rel_pos}")
+        #print(f"rel_pos : {self.rel_pos}")
         target_rew = torch.sum(torch.square(self.last_rel_pos), dim=1) - torch.sum(torch.square(self.rel_pos), dim=1)
+        #print(f"Target reward : {target_rew}")
         return target_rew
     
     def _reward_smooth(self):

@@ -24,7 +24,7 @@ def main():
         ),
         show_viewer=args.vis,
         rigid_options=gs.options.RigidOptions(
-            dt=0.01,
+            dt=0.02,
             gravity=(0.0, 0.0, -10.0),
         ),
     )
@@ -69,31 +69,34 @@ def main():
         dofs_idx_local = dofs_idx,
     )
 
-    linear_vel = 0.2
-    angular_vel = 1
+    linear_vel = 0.4
+    angular_vel = 0.8
+    robot_angular_velocity_multiplier = 1.76
+    angular_vel = angular_vel * robot_angular_velocity_multiplier
+    wheel_encoder_resolution = 1
 
-    wheel_base = 0.359
+    wheel_base = 0.358
+    wheel_radius = 0.0625
     left_wheel_vel = linear_vel - (angular_vel * wheel_base / 2)
+    wheel_L_ang_vel = left_wheel_vel / wheel_radius
+
     right_wheel_vel = linear_vel + (angular_vel * wheel_base / 2)
+    wheel_R_ang_vel = right_wheel_vel / wheel_radius
 
-    left_wheel_vel_deg = left_wheel_vel * (180 / torch.pi)  # Convertir en °/s
-    right_wheel_vel_deg = right_wheel_vel * (180 / torch.pi)  # Convertir en °/s
-    print(left_wheel_vel_deg)
-
-    #wheel_velocities = torch.cat([left_wheel_vel_deg, right_wheel_vel_deg, left_wheel_vel_deg, right_wheel_vel_deg], dim=-1)  # Shape: [N, 4]
-
+    left_wheel_speed = (wheel_L_ang_vel / (2 * torch.pi)) * wheel_encoder_resolution
+    right_wheel_speed = (wheel_R_ang_vel / (2 * torch.pi)) * wheel_encoder_resolution
 
     r0.control_dofs_velocity(
-                np.array([left_wheel_vel_deg, left_wheel_vel_deg, right_wheel_vel_deg, right_wheel_vel_deg]),
+                np.array([left_wheel_speed, left_wheel_speed, right_wheel_speed, right_wheel_speed]),
                 dofs_idx,
             )
 
-    gs.tools.run_in_another_thread(fn=run_sim, args=(scene, args.vis, cam))
+    gs.tools.run_in_another_thread(fn=run_sim, args=(scene, args.vis, r0))
     if args.vis:
         scene.viewer.start()
 
 
-def run_sim(scene, enable_vis, cam):
+def run_sim(scene, enable_vis, robot):
     from time import time
 
     t_prev = time()
@@ -101,6 +104,7 @@ def run_sim(scene, enable_vis, cam):
     while True:
         i += 1
         scene.step()
+        print(f"Robot position : {robot.get_pos()}")
         t_now = time()
         print(1 / (t_now - t_prev), "FPS")
         t_prev = t_now

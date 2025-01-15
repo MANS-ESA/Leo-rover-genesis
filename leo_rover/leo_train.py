@@ -59,10 +59,11 @@ def get_cfgs():
     env_cfg = {
         "num_actions": 2,
         # base pose
-        "base_init_pos": [0.0, 0.0, 1.0],
+        "base_init_pos": [0.0, 0.0, 0.0],
         "base_init_quat": [1.0, 0.0, 0.0, 0.0],
         "episode_length_s": 15.0,
         "at_target_threshold": 0.1,
+        "clip_actions": 1.0,
         # visualization
         "visualize_target": False,
         "visualize_camera": False,
