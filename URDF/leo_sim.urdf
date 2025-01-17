@@ -4,8 +4,6 @@
 <!-- |    EDITING THIS FILE BY HAND IS NOT RECOMMENDED                                 | -->
 <!-- =================================================================================== -->
 <robot name="leo_sim">
-  <!-- LEO GAZEBO -->
-  <link name="base_footprint"/>
   <link name="base_link">
     <inertial>
       <mass value="1.584994"/>
@@ -194,13 +192,6 @@
   <link name="camera_frame"/>
   <link name="camera_optical_frame"/>
   <!-- JOINTS -->
-
-
-  <joint name="base_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0.19783"/>
-    <parent link="base_footprint"/>
-    <child link="base_link"/>
-  </joint>
 
 
   <joint name="rocker_L_joint" type="fixed">

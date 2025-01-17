@@ -41,15 +41,14 @@ def main():
     plane = scene.add_entity(gs.morphs.Plane())
     r0 = scene.add_entity(
         gs.morphs.URDF(
-            file="../URDF/leo_sim.urdf",
-            pos=(0, 0, 0)
+            file="/Users/julienlegrand/Documents/IG2I/ESA/Leo-rover-genesis/URDF/leo_sim.urdf",
         ),
     )
 
     ########################## build ##########################
     scene.build()
 
-    jnt_names = [
+    '''jnt_names = [
         'wheel_FL_joint',
         'wheel_RL_joint',
         'wheel_FR_joint',
@@ -67,7 +66,8 @@ def main():
     r0.set_dofs_kv(
         kv             = np.array([1.0, 1.0, 1.0, 1.0]),
         dofs_idx_local = dofs_idx,
-    )
+    )'''
+
 
     linear_vel = 0.4
     angular_vel = 0.8
@@ -86,10 +86,10 @@ def main():
     left_wheel_speed = (wheel_L_ang_vel / (2 * torch.pi)) * wheel_encoder_resolution
     right_wheel_speed = (wheel_R_ang_vel / (2 * torch.pi)) * wheel_encoder_resolution
 
-    r0.control_dofs_velocity(
+    ''''r0.control_dofs_velocity(
                 np.array([left_wheel_speed, left_wheel_speed, right_wheel_speed, right_wheel_speed]),
                 dofs_idx,
-            )
+            )'''
 
     gs.tools.run_in_another_thread(fn=run_sim, args=(scene, args.vis, r0))
     if args.vis:
@@ -98,6 +98,7 @@ def main():
 
 def run_sim(scene, enable_vis, robot):
     from time import time
+    robot.set_pos([10.0, 10.0, 1.0], zero_velocity=True)
 
     t_prev = time()
     i = 0

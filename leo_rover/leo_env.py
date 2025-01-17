@@ -94,8 +94,7 @@ class LeoRoverEnv:
         self.base_init_quat = torch.tensor(self.env_cfg["base_init_quat"], device=self.device)
         self.robot = self.scene.add_entity(gs.morphs.URDF(
             file=urdf_path,
-            pos=self.base_init_pos.cpu().numpy(),
-            quat=self.base_init_quat.cpu().numpy(),
+            pos=(0.0, 0.0, 0.0),
         ))
 
         # build scene
@@ -188,8 +187,6 @@ class LeoRoverEnv:
         self.episode_length_buf += 1
         self.last_base_pos[:] = self.base_pos[:]
         self.base_pos[:] = self.robot.get_pos()
-        print(f"robot.getpos {self.robot.get_pos()}")
-        print(f"base pos : {self.base_pos}")
         self.rel_pos = self.commands - self.base_pos
         self.last_rel_pos = self.commands - self.last_base_pos
 
@@ -208,12 +205,10 @@ class LeoRoverEnv:
 
         # compute reward
         self.rew_buf[:] = 0.0
-        #print(f"Rewards : {self.reward_functions.items()}")
         for name, reward_func in self.reward_functions.items():
             rew = reward_func() * self.reward_scales[name]
             self.rew_buf += rew
             self.episode_sums[name] += rew
-
 
         # compute observations
         self.obs_buf = torch.cat(
@@ -224,6 +219,7 @@ class LeoRoverEnv:
             axis=-1
         )
         self.last_actions[:] = self.actions[:]
+
 
         return self.obs_buf, None, self.rew_buf, self.reset_buf, self.extras
 
@@ -246,9 +242,9 @@ class LeoRoverEnv:
         self.last_base_pos[env_ids] = self.base_init_pos
         self.rel_pos = self.commands - self.base_pos
         self.last_rel_pos = self.commands - self.last_base_pos
-        print(f"Base pos : {self.base_pos}")
+        print(f"Base pos : {self.base_pos[env_ids]}")
+        print(f"type pos : {self.base_pos.dtype}")
         self.robot.set_pos(self.base_pos[env_ids], zero_velocity=True, envs_idx=env_ids)
-        self.robot.set_quat(self.base_quat[env_ids], zero_velocity=True, envs_idx=env_ids)
         self.base_lin_vel[env_ids] = 0
         self.robot.zero_all_dofs_velocity(env_ids)
 
@@ -268,11 +264,9 @@ class LeoRoverEnv:
         self._resample_commands(env_ids)
         print(f"Robot pos : {self.robot.get_pos()}")
 
+
     def _reward_target(self):
-        #print(f"last_rel_pos : {self.last_rel_pos}")
-        #print(f"rel_pos : {self.rel_pos}")
         target_rew = torch.sum(torch.square(self.last_rel_pos), dim=1) - torch.sum(torch.square(self.rel_pos), dim=1)
-        #print(f"Target reward : {target_rew}")
         return target_rew
     
     def _reward_smooth(self):

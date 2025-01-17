@@ -2,6 +2,7 @@ import argparse
 import os
 import pickle
 import shutil
+import numpy
 
 import genesis as gs
 import torch
@@ -27,7 +28,7 @@ def get_train_cfg(exp_name, max_iterations):
         },
         "init_member_classes": {},
         "policy": {
-            "activation": "elu",
+            "activation": "tanh",
             "actor_hidden_dims": [512, 256, 128],
             "critic_hidden_dims": [512, 256, 128],
             "init_noise_std": 1.0,
@@ -59,7 +60,7 @@ def get_cfgs():
     env_cfg = {
         "num_actions": 2,
         # base pose
-        "base_init_pos": [0.0, 0.0, 0.0],
+        "base_init_pos": [10.0, 10.0, 1.0],
         "base_init_quat": [1.0, 0.0, 0.0, 0.0],
         "episode_length_s": 15.0,
         "at_target_threshold": 0.1,
@@ -96,10 +97,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-e", "--exp_name", type=str, default="leo-rover-run")
     parser.add_argument("-v", "--vis", action="store_true", default=False)
-    parser.add_argument("-B", "--num_envs", type=int, default=2000)
-    parser.add_argument("--max_iterations", type=int, default=3000)
-    parser.add_argument("--urdf_path", type=str, default=r"../URDF/leo_sim.urdf")
-    parser.add_argument("--device", type=str, default=r"mps")
+    parser.add_argument("-B", "--num_envs", type=int, default=2)
+    parser.add_argument("--max_iterations", type=int, default=10)
+    parser.add_argument("--urdf_path", type=str, default=r"/Users/julienlegrand/Documents/IG2I/ESA/Leo-rover-genesis/URDF/leo_sim.urdf")
+    parser.add_argument("--device", type=str, default=r"cpu")
     args = parser.parse_args()
 
     gs.init(logging_level="error") #info si voir FPS
