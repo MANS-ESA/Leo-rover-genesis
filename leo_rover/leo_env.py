@@ -155,19 +155,10 @@ class LeoRoverEnv:
 
     def step(self, actions):
 
-        # Clip actions to valid ranges
-        #self.actions = torch.clip(actions, -0.4, 0.4)
         self.actions = torch.clip(actions, -self.env_cfg["clip_actions"], self.env_cfg["clip_actions"])
-        #self.actions = self.actions.cpu()
-
-
-        #print(f"Actions :  {actions}")
 
         linear_vel = self.actions[:, 0:1]  # Linear velocity [m/s, 1]
         angular_vel = self.actions[:, 1:2]  # Angular velocity [rad/s, 1]
-
-        #print(f"Linear :{linear_vel}")
-        #print(f"Angular :{angular_vel}")
 
         wheel_base = 0.359
         left_wheel_vel = linear_vel - (angular_vel * wheel_base / 2)
@@ -242,8 +233,6 @@ class LeoRoverEnv:
         self.last_base_pos[env_ids] = self.base_init_pos
         self.rel_pos = self.commands - self.base_pos
         self.last_rel_pos = self.commands - self.last_base_pos
-        print(f"Base pos : {self.base_pos[env_ids]}")
-        print(f"type pos : {self.base_pos.dtype}")
         self.robot.set_pos(self.base_pos[env_ids], zero_velocity=True, envs_idx=env_ids)
         self.base_lin_vel[env_ids] = 0
         self.robot.zero_all_dofs_velocity(env_ids)
@@ -262,7 +251,6 @@ class LeoRoverEnv:
             self.episode_sums[key][env_ids] = 0.0
 
         self._resample_commands(env_ids)
-        print(f"Robot pos : {self.robot.get_pos()}")
 
 
     def _reward_target(self):

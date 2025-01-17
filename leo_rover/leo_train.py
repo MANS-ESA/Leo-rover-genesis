@@ -60,9 +60,9 @@ def get_cfgs():
     env_cfg = {
         "num_actions": 2,
         # base pose
-        "base_init_pos": [10.0, 10.0, 1.0],
+        "base_init_pos": [1.0, .0, 1.0],
         "base_init_quat": [1.0, 0.0, 0.0, 0.0],
-        "episode_length_s": 15.0,
+        "episode_length_s": 25.0,
         "at_target_threshold": 0.1,
         "clip_actions": 1.0,
         # visualization
@@ -100,7 +100,7 @@ def main():
     parser.add_argument("-B", "--num_envs", type=int, default=2)
     parser.add_argument("--max_iterations", type=int, default=10)
     parser.add_argument("--urdf_path", type=str, default=r"/Users/julienlegrand/Documents/IG2I/ESA/Leo-rover-genesis/URDF/leo_sim.urdf")
-    parser.add_argument("--device", type=str, default=r"cpu")
+    parser.add_argument("--device", type=str, default=r"mps")
     args = parser.parse_args()
 
     gs.init(logging_level="error") #info si voir FPS
@@ -129,10 +129,7 @@ def main():
     runner = OnPolicyRunner(env, train_cfg, log_dir, device=args.device)
 
     pickle.dump(
-        [
-            train_cfg,
-            args.urdf_path,
-        ],
+        [env_cfg, obs_cfg, reward_cfg, command_cfg, train_cfg],
         open(f"{log_dir}/cfgs.pkl", "wb"),
     )
 
