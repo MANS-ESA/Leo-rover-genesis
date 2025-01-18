@@ -76,7 +76,7 @@ class LeoRoverEnv:
             self.target = self.scene.add_entity(
                 morph=gs.morphs.Mesh(
                     file="../meshes/sphere.obj",
-                    scale=0.05,
+                    scale=0.3,
                     fixed=True,
                     collision=False,
                 ),
@@ -144,31 +144,38 @@ class LeoRoverEnv:
         self.commands[envs_idx, 0] = gs_rand_float(*self.command_cfg["pos_x_range"], (len(envs_idx),), self.device)
         self.commands[envs_idx, 1] = gs_rand_float(*self.command_cfg["pos_y_range"], (len(envs_idx),), self.device)
         self.commands[envs_idx, 2] = gs_rand_float(*self.command_cfg["pos_z_range"], (len(envs_idx),), self.device)
+        #print(f"Commands : {self.commands}")
         if self.target is not None:
             self.target.set_pos(self.commands[envs_idx], zero_velocity=True, envs_idx=envs_idx)
 
     def _at_target(self):
+        #print(f"dist : {torch.norm(self.rel_pos, dim=1)}")
         at_target = (
             (torch.norm(self.rel_pos, dim=1) < self.env_cfg["at_target_threshold"]).nonzero(as_tuple=False).flatten()
         )
+        #print(f"at_target : {(torch.norm(self.rel_pos, dim=1) < self.env_cfg['at_target_threshold'])}")
         return at_target
 
     def step(self, actions):
 
-        self.actions = torch.clip(actions, -self.env_cfg["clip_actions"], self.env_cfg["clip_actions"])
+        self.actions[:,0:1] = torch.clip(actions[:,0:1], -self.env_cfg["clip_actions_lin"], self.env_cfg["clip_actions_lin"])
+        self.actions[:,1:2] = torch.clip(actions[:,1:2], -self.env_cfg["clip_actions_ang"], self.env_cfg["clip_actions_ang"])
 
         linear_vel = self.actions[:, 0:1]  # Linear velocity [m/s, 1]
         angular_vel = self.actions[:, 1:2]  # Angular velocity [rad/s, 1]
 
+
+
         wheel_base = 0.359
-        left_wheel_vel = linear_vel - (angular_vel * wheel_base / 2)
-        right_wheel_vel = linear_vel + (angular_vel * wheel_base / 2)
-
-        left_wheel_vel_deg = left_wheel_vel * (180 / torch.pi)
-        right_wheel_vel_deg = right_wheel_vel * (180 / torch.pi)
-
+        wheel_radius = 0.033  # Radius of the wheels (m)
+        #left_wheel_vel = linear_vel - (angular_vel * wheel_base / 2)
+        #right_wheel_vel = linear_vel + (angular_vel * wheel_base / 2)
+        left_wheel_vel = (linear_vel -  2.0* (angular_vel * wheel_base / 2)) / wheel_radius
+        right_wheel_vel = (linear_vel + 2.0* (angular_vel * wheel_base / 2)) / wheel_radius
+        #left_wheel_vel_deg = left_wheel_vel * (180 / torch.pi)
+        #right_wheel_vel_deg = right_wheel_vel * (180 / torch.pi)
         self.robot.control_dofs_velocity(
-            torch.cat([left_wheel_vel_deg, right_wheel_vel_deg, left_wheel_vel_deg, right_wheel_vel_deg], dim=-1)
+            torch.cat([left_wheel_vel, right_wheel_vel, left_wheel_vel, right_wheel_vel], dim=-1)
             ,self.motor_dofs
         )
 
@@ -179,14 +186,21 @@ class LeoRoverEnv:
         self.last_base_pos[:] = self.base_pos[:]
         self.base_pos[:] = self.robot.get_pos()
         self.rel_pos = self.commands - self.base_pos
+        #print(f"rel pose : {self.rel_pos}")
         self.last_rel_pos = self.commands - self.last_base_pos
 
         # resample commands
         envs_idx = self._at_target()
+        #add some rew
         self._resample_commands(envs_idx)
 
+        self.crash_condition = (
+            (torch.abs(self.rel_pos[:, 0]) > self.env_cfg["termination_if_x_greater_than"])
+            | (torch.abs(self.rel_pos[:, 2]) > self.env_cfg["termination_if_z_greater_than"])
+        )
+
         # check termination and reset
-        self.reset_buf = (self.episode_length_buf > self.max_episode_length)
+        self.reset_buf = (self.episode_length_buf > self.max_episode_length) | self.crash_condition
 
         time_out_idx = (self.episode_length_buf > self.max_episode_length).nonzero(as_tuple=False).flatten()
         self.extras["time_outs"] = torch.zeros_like(self.reset_buf, device=self.device, dtype=gs.tc_float)
@@ -194,8 +208,8 @@ class LeoRoverEnv:
 
         self.reset_idx(self.reset_buf.nonzero(as_tuple=False).flatten())
 
-        # compute reward
         self.rew_buf[:] = 0.0
+        # compute reward
         for name, reward_func in self.reward_functions.items():
             rew = reward_func() * self.reward_scales[name]
             self.rew_buf += rew
@@ -204,7 +218,8 @@ class LeoRoverEnv:
         # compute observations
         self.obs_buf = torch.cat(
             [
-                torch.clip(self.rel_pos * self.obs_scales["rel_pos"], -1, 1),
+                self.commands,
+                self.base_pos,
                 self.last_actions,
             ],
             axis=-1
@@ -239,7 +254,7 @@ class LeoRoverEnv:
 
 
         # reset buffers
-        self.last_actions[env_ids] = 0.0
+        self.last_actions[env_ids] = torch.zeros_like(self.last_actions[env_ids])
         self.episode_length_buf[env_ids] = 0
         self.reset_buf[env_ids] = True
 
@@ -260,6 +275,14 @@ class LeoRoverEnv:
     def _reward_smooth(self):
         smooth_rew = torch.sum(torch.square(self.actions - self.last_actions), dim=1)
         return smooth_rew
+
+    def _reward_duration(self):
+        return self.episode_length_buf.float()
+    
+    def _reward_crash(self):
+        crash_rew = torch.zeros((self.num_envs,), device=self.device, dtype=gs.tc_float)
+        crash_rew[self.crash_condition] = 1
+        return crash_rew
 
     def get_observations(self):
         return self.obs_buf

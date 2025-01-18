@@ -20,7 +20,10 @@ def main():
 
     log_dir = f"logs/{args.exp_name}"
     env_cfg, obs_cfg, reward_cfg, command_cfg, train_cfg = pickle.load(open(f"logs/{args.exp_name}/cfgs.pkl", "rb"))
-    reward_cfg["reward_scales"] = {}
+    reward_cfg["reward_scales"] = {
+        "target": 10.0,
+        #"smooth": -1e-4,
+    }
 
     # visualize the target
     env_cfg["visualize_target"] = True
@@ -36,16 +39,17 @@ def main():
         reward_cfg=reward_cfg,
         command_cfg=command_cfg,
         show_viewer=True,
+        device="cuda",
     )
 
-    runner = OnPolicyRunner(env, train_cfg, log_dir, device="mps")
+    runner = OnPolicyRunner(env, train_cfg, log_dir, device="cuda")
     resume_path = os.path.join(log_dir, f"model_{args.ckpt}.pt")
     runner.load(resume_path)
-    policy = runner.get_inference_policy(device="mps")
+    policy = runner.get_inference_policy(device="cuda")
 
     obs, _ = env.reset()
 
-    max_sim_step = int(env_cfg["episode_length_s"] * env_cfg["max_visualize_FPS"])
+    max_sim_step = 1_000_000
     with torch.no_grad():
         if args.record:
             env.cam.start_recording()

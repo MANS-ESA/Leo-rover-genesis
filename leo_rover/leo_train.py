@@ -18,7 +18,7 @@ def get_train_cfg(exp_name, max_iterations):
             "entropy_coef": 0.01,
             "gamma": 0.99,
             "lam": 0.95,
-            "learning_rate": 0.001,
+            "learning_rate": 0.003,
             "max_grad_norm": 1.0,
             "num_learning_epochs": 5,
             "num_mini_batches": 4,
@@ -28,9 +28,9 @@ def get_train_cfg(exp_name, max_iterations):
         },
         "init_member_classes": {},
         "policy": {
-            "activation": "tanh",
-            "actor_hidden_dims": [512, 256, 128],
-            "critic_hidden_dims": [512, 256, 128],
+            "activation": "relu",
+            "actor_hidden_dims": [128, 128],
+            "critic_hidden_dims": [128,128],
             "init_noise_std": 1.0,
         },
         "runner": {
@@ -42,7 +42,7 @@ def get_train_cfg(exp_name, max_iterations):
             "max_iterations": max_iterations,
             "num_steps_per_env": 24,
             "policy_class_name": "ActorCritic",
-            "record_interval": 20, 
+            "record_interval": -1, 
             "resume": False,
             "resume_path": None,
             "run_name": "",
@@ -62,16 +62,20 @@ def get_cfgs():
         # base pose
         "base_init_pos": [1.0, .0, 1.0],
         "base_init_quat": [1.0, 0.0, 0.0, 0.0],
-        "episode_length_s": 25.0,
-        "at_target_threshold": 0.1,
-        "clip_actions": 1.0,
+        "episode_length_s": 30.0,
+        "at_target_threshold": 0.5,
+        "clip_actions_lin": 0.4,
+        "clip_actions_ang": 1.0,
         # visualization
         "visualize_target": False,
         "visualize_camera": False,
         "max_visualize_FPS": 60,
+        #termination
+        "termination_if_x_greater_than": 3.0,
+        "termination_if_z_greater_than": 3.0,
     }
     obs_cfg = {
-        "num_obs": 5,
+        "num_obs": 8,
         "obs_scales": {
             "rel_pos": 1 / 3.0,
             "lin_vel": 1 / 3.0,
@@ -81,14 +85,16 @@ def get_cfgs():
     reward_cfg = {
         "reward_scales": {
             "target": 10.0,
-            "smooth": -1e-4,
+            "smooth": -1e-6,
+            "duration": -1e-6,
+            "crash": -10.0,
         },
     }
     command_cfg = {
         "num_commands": 3,
-        "pos_x_range": [-2.0, 2.0],
-        "pos_y_range": [0.1, 0.15],
-        "pos_z_range": [-2.0, 2.0],
+        "pos_x_range": [-3.0, 3.0],
+        "pos_y_range": [-3.0, 3.0],
+        "pos_z_range": [0.1, 0.1],
     }
 
     return env_cfg, obs_cfg, reward_cfg, command_cfg
@@ -99,7 +105,7 @@ def main():
     parser.add_argument("-v", "--vis", action="store_true", default=False)
     parser.add_argument("-B", "--num_envs", type=int, default=2)
     parser.add_argument("--max_iterations", type=int, default=10)
-    parser.add_argument("--urdf_path", type=str, default=r"/Users/julienlegrand/Documents/IG2I/ESA/Leo-rover-genesis/URDF/leo_sim.urdf")
+    parser.add_argument("--urdf_path", type=str, default=r"../URDF/leo_sim.urdf")
     parser.add_argument("--device", type=str, default=r"mps")
     args = parser.parse_args()
 
