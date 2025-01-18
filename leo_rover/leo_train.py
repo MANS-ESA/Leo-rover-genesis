@@ -88,6 +88,7 @@ def get_cfgs():
             "smooth": -1e-6,
             "duration": -1e-6,
             "crash": -10.0,
+            "target_touched": 100.0,
         },
     }
     command_cfg = {

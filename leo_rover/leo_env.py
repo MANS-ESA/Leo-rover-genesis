@@ -144,16 +144,13 @@ class LeoRoverEnv:
         self.commands[envs_idx, 0] = gs_rand_float(*self.command_cfg["pos_x_range"], (len(envs_idx),), self.device)
         self.commands[envs_idx, 1] = gs_rand_float(*self.command_cfg["pos_y_range"], (len(envs_idx),), self.device)
         self.commands[envs_idx, 2] = gs_rand_float(*self.command_cfg["pos_z_range"], (len(envs_idx),), self.device)
-        #print(f"Commands : {self.commands}")
         if self.target is not None:
             self.target.set_pos(self.commands[envs_idx], zero_velocity=True, envs_idx=envs_idx)
 
     def _at_target(self):
-        #print(f"dist : {torch.norm(self.rel_pos, dim=1)}")
         at_target = (
-            (torch.norm(self.rel_pos, dim=1) < self.env_cfg["at_target_threshold"]).nonzero(as_tuple=False).flatten()
+            (torch.norm(self.rel_pos, dim=1) < self.env_cfg["at_target_threshold"])
         )
-        #print(f"at_target : {(torch.norm(self.rel_pos, dim=1) < self.env_cfg['at_target_threshold'])}")
         return at_target
 
     def step(self, actions):
@@ -190,17 +187,20 @@ class LeoRoverEnv:
         self.last_rel_pos = self.commands - self.last_base_pos
 
         # resample commands
-        envs_idx = self._at_target()
+        #envs_idx = self._at_target()
+
         #add some rew
-        self._resample_commands(envs_idx)
+        #self._resample_commands(envs_idx)
 
         self.crash_condition = (
             (torch.abs(self.rel_pos[:, 0]) > self.env_cfg["termination_if_x_greater_than"])
             | (torch.abs(self.rel_pos[:, 2]) > self.env_cfg["termination_if_z_greater_than"])
         )
 
+        self.target_touched = self._at_target()
+
         # check termination and reset
-        self.reset_buf = (self.episode_length_buf > self.max_episode_length) | self.crash_condition
+        self.reset_buf = (self.episode_length_buf > self.max_episode_length) | self.crash_condition | self.target_touched
 
         time_out_idx = (self.episode_length_buf > self.max_episode_length).nonzero(as_tuple=False).flatten()
         self.extras["time_outs"] = torch.zeros_like(self.reset_buf, device=self.device, dtype=gs.tc_float)
@@ -283,6 +283,11 @@ class LeoRoverEnv:
         crash_rew = torch.zeros((self.num_envs,), device=self.device, dtype=gs.tc_float)
         crash_rew[self.crash_condition] = 1
         return crash_rew
+    
+    def _reward_target_touched(self):
+        target_touched_rew = torch.zeros((self.num_envs,), device=self.device, dtype=gs.tc_float)
+        target_touched_rew[self.target_touched] = 1
+        return target_touched_rew
 
     def get_observations(self):
         return self.obs_buf
