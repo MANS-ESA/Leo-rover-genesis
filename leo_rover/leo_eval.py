@@ -39,27 +39,30 @@ def main():
         reward_cfg=reward_cfg,
         command_cfg=command_cfg,
         show_viewer=True,
-        device="cuda",
+        device="mps",
     )
 
-    runner = OnPolicyRunner(env, train_cfg, log_dir, device="cuda")
+    runner = OnPolicyRunner(env, train_cfg, log_dir, device="mps")
     resume_path = os.path.join(log_dir, f"model_{args.ckpt}.pt")
     runner.load(resume_path)
-    policy = runner.get_inference_policy(device="cuda")
+    policy = runner.get_inference_policy(device="mps")
 
     obs, _ = env.reset()
 
-    max_sim_step = 1_000_000
+    max_sim_step = 1000
     with torch.no_grad():
         if args.record:
+            print("YOOOOO")
             env.cam.start_recording()
             for _ in range(max_sim_step):
+                print(_)
                 actions = policy(obs)
                 obs, _, rews, dones, infos = env.step(actions)
                 env.cam.render()
             env.cam.stop_recording(save_to_filename="video.mp4", fps=env_cfg["max_visualize_FPS"])
         else:
             for _ in range(max_sim_step):
+                print(_)
                 actions = policy(obs)
                 obs, _, rews, dones, infos = env.step(actions)
 

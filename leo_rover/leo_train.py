@@ -60,10 +60,10 @@ def get_cfgs():
     env_cfg = {
         "num_actions": 2,
         # base pose
-        "base_init_pos": [1.0, .0, 1.0],
+        "base_init_pos": [1.0, 1.0, 0.0],
         "base_init_quat": [1.0, 0.0, 0.0, 0.0],
-        "episode_length_s": 30.0,
-        "at_target_threshold": 0.5,
+        "episode_length_s": 20.0,
+        "at_target_threshold": 0.1,
         "clip_actions_lin": 0.4,
         "clip_actions_ang": 1.0,
         # visualization
@@ -71,11 +71,11 @@ def get_cfgs():
         "visualize_camera": False,
         "max_visualize_FPS": 60,
         #termination
-        "termination_if_x_greater_than": 3.0,
-        "termination_if_z_greater_than": 3.0,
+        "termination_if_x_greater_than": 4.0,
+        "termination_if_y_greater_than": 4.0,
     }
     obs_cfg = {
-        "num_obs": 8,
+        "num_obs": 6,
         "obs_scales": {
             "rel_pos": 1 / 3.0,
             "lin_vel": 1 / 3.0,
@@ -85,16 +85,13 @@ def get_cfgs():
     reward_cfg = {
         "reward_scales": {
             "target": 10.0,
-            "smooth": -1e-6,
-            "duration": -1e-6,
-            "crash": -10.0,
-            "target_touched": 100.0,
+            "crash":  -10.0
         },
     }
     command_cfg = {
         "num_commands": 3,
-        "pos_x_range": [-3.0, 3.0],
-        "pos_y_range": [-3.0, 3.0],
+        "pos_x_range": [-2.0, 2.0],
+        "pos_y_range": [-2.0, 2.0],
         "pos_z_range": [0.1, 0.1],
     }
 
@@ -106,7 +103,7 @@ def main():
     parser.add_argument("-v", "--vis", action="store_true", default=False)
     parser.add_argument("-B", "--num_envs", type=int, default=2)
     parser.add_argument("--max_iterations", type=int, default=10)
-    parser.add_argument("--urdf_path", type=str, default=r"../URDF/leo_sim.urdf")
+    parser.add_argument("--urdf_path", type=str, default=r"/Users/julienlegrand/Documents/IG2I/ESA/Leo-rover-genesis/URDF/leo_sim.urdf")
     parser.add_argument("--device", type=str, default=r"mps")
     args = parser.parse_args()
 

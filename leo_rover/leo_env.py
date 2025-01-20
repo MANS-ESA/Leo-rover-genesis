@@ -31,7 +31,7 @@ class LeoRoverEnv:
         self.num_actions = env_cfg["num_actions"]
         self.num_commands = command_cfg["num_commands"]
 
-        self.dt = 0.02            # 50 Hz
+        self.dt = 0.02           # 50 Hz
         self.max_episode_length = math.ceil(env_cfg["episode_length_s"] / self.dt)
 
         self.env_cfg = env_cfg
@@ -89,6 +89,16 @@ class LeoRoverEnv:
         else:
             self.target = None
 
+
+        if self.env_cfg["visualize_camera"]:
+            self.cam = self.scene.add_camera(
+                res=(640, 480),
+                pos=(3.5, 0.0, 2.5),
+                lookat=(0, 0, 0.5),
+                fov=30,
+                GUI=True,
+            )
+
         # Add Leo Rover
         self.base_init_pos = torch.tensor(self.env_cfg["base_init_pos"], device=self.device)
         self.base_init_quat = torch.tensor(self.env_cfg["base_init_quat"], device=self.device)
@@ -108,20 +118,17 @@ class LeoRoverEnv:
         ]
         self.motor_dofs = [self.robot.get_joint(name).dof_idx_local for name in self.dof_names]
 
-        # Paramètres de base pour le control (PD ou direct velocity)
-        self.kp = 1_000_000    # si on contrôle en vitesse
+        self.kp = 1_000_000
         self.kd = 1.0
         self.robot.set_dofs_kp([self.kp] * len(self.motor_dofs), self.motor_dofs)
         self.robot.set_dofs_kv([self.kd] * len(self.motor_dofs), self.motor_dofs)
 
-        # prepare reward functions and multiply reward scales by dt
         self.reward_functions, self.episode_sums = dict(), dict()
         for name in self.reward_scales.keys():
             self.reward_scales[name] *= self.dt
             self.reward_functions[name] = getattr(self, "_reward_" + name)
             self.episode_sums[name] = torch.zeros((self.num_envs,), device=self.device, dtype=gs.tc_float)
 
-        # Initialize buffers
         self.obs_buf = torch.zeros((self.num_envs, self.num_obs), device=self.device)
         self.reset_buf = torch.ones((self.num_envs,), dtype=torch.long, device=self.device)
         self.rew_buf = torch.zeros((self.num_envs,), dtype=torch.float, device=self.device)
@@ -138,7 +145,7 @@ class LeoRoverEnv:
         self.base_ang_vel = torch.zeros((self.num_envs, 3), device=self.device)
         self.last_base_pos = torch.zeros_like(self.base_pos)
 
-        self.extras = dict()  # extra information for logging
+        self.extras = dict()
 
     def _resample_commands(self, envs_idx):
         self.commands[envs_idx, 0] = gs_rand_float(*self.command_cfg["pos_x_range"], (len(envs_idx),), self.device)
@@ -149,58 +156,45 @@ class LeoRoverEnv:
 
     def _at_target(self):
         at_target = (
-            (torch.norm(self.rel_pos, dim=1) < self.env_cfg["at_target_threshold"])
+            (torch.norm(self.rel_pos, dim=1) < self.env_cfg["at_target_threshold"]).nonzero(as_tuple=False).flatten()
         )
         return at_target
 
     def step(self, actions):
-
         self.actions[:,0:1] = torch.clip(actions[:,0:1], -self.env_cfg["clip_actions_lin"], self.env_cfg["clip_actions_lin"])
         self.actions[:,1:2] = torch.clip(actions[:,1:2], -self.env_cfg["clip_actions_ang"], self.env_cfg["clip_actions_ang"])
-
-        linear_vel = self.actions[:, 0:1]  # Linear velocity [m/s, 1]
-        angular_vel = self.actions[:, 1:2]  # Angular velocity [rad/s, 1]
-
+        linear_vel = self.actions[:, 0:1]
+        angular_vel = self.actions[:, 1:2]
 
 
+        gain = 5
         wheel_base = 0.359
-        wheel_radius = 0.033  # Radius of the wheels (m)
-        #left_wheel_vel = linear_vel - (angular_vel * wheel_base / 2)
-        #right_wheel_vel = linear_vel + (angular_vel * wheel_base / 2)
-        left_wheel_vel = (linear_vel -  2.0* (angular_vel * wheel_base / 2)) / wheel_radius
-        right_wheel_vel = (linear_vel + 2.0* (angular_vel * wheel_base / 2)) / wheel_radius
-        #left_wheel_vel_deg = left_wheel_vel * (180 / torch.pi)
-        #right_wheel_vel_deg = right_wheel_vel * (180 / torch.pi)
+        robot_angular_velocity_multiplier = 1.76
+        angular_vel = angular_vel * robot_angular_velocity_multiplier
+        left_wheel_vel = linear_vel - (angular_vel * wheel_base / 2)
+        right_wheel_vel = linear_vel + (angular_vel * wheel_base / 2)
+
         self.robot.control_dofs_velocity(
-            torch.cat([left_wheel_vel, right_wheel_vel, left_wheel_vel, right_wheel_vel], dim=-1)
+            torch.cat([left_wheel_vel * gain, right_wheel_vel * gain, left_wheel_vel * gain, right_wheel_vel * gain], dim=-1)
             ,self.motor_dofs
         )
 
         self.scene.step()
 
-        # update buffers
         self.episode_length_buf += 1
         self.last_base_pos[:] = self.base_pos[:]
         self.base_pos[:] = self.robot.get_pos()
         self.rel_pos = self.commands - self.base_pos
-        #print(f"rel pose : {self.rel_pos}")
         self.last_rel_pos = self.commands - self.last_base_pos
 
-        # resample commands
-        #envs_idx = self._at_target()
-
-        #add some rew
-        #self._resample_commands(envs_idx)
+        envs_idx = self._at_target()
+        self._resample_commands(envs_idx)
 
         self.crash_condition = (
             (torch.abs(self.rel_pos[:, 0]) > self.env_cfg["termination_if_x_greater_than"])
-            | (torch.abs(self.rel_pos[:, 2]) > self.env_cfg["termination_if_z_greater_than"])
+            | (torch.abs(self.rel_pos[:, 1]) > self.env_cfg["termination_if_y_greater_than"])
         )
-
-        self.target_touched = self._at_target()
-
-        # check termination and reset
-        self.reset_buf = (self.episode_length_buf > self.max_episode_length) | self.crash_condition | self.target_touched
+        self.reset_buf = (self.episode_length_buf > self.max_episode_length) | self.crash_condition
 
         time_out_idx = (self.episode_length_buf > self.max_episode_length).nonzero(as_tuple=False).flatten()
         self.extras["time_outs"] = torch.zeros_like(self.reset_buf, device=self.device, dtype=gs.tc_float)
@@ -209,18 +203,16 @@ class LeoRoverEnv:
         self.reset_idx(self.reset_buf.nonzero(as_tuple=False).flatten())
 
         self.rew_buf[:] = 0.0
-        # compute reward
         for name, reward_func in self.reward_functions.items():
             rew = reward_func() * self.reward_scales[name]
             self.rew_buf += rew
             self.episode_sums[name] += rew
 
-        # compute observations
         self.obs_buf = torch.cat(
             [
-                self.commands,
                 self.base_pos,
-                self.last_actions,
+                self.commands
+                #self.last_actions,
             ],
             axis=-1
         )
@@ -254,7 +246,7 @@ class LeoRoverEnv:
 
 
         # reset buffers
-        self.last_actions[env_ids] = torch.zeros_like(self.last_actions[env_ids])
+        self.last_actions[env_ids] = 0.0
         self.episode_length_buf[env_ids] = 0
         self.reset_buf[env_ids] = True
 
@@ -275,19 +267,11 @@ class LeoRoverEnv:
     def _reward_smooth(self):
         smooth_rew = torch.sum(torch.square(self.actions - self.last_actions), dim=1)
         return smooth_rew
-
-    def _reward_duration(self):
-        return self.episode_length_buf.float()
     
     def _reward_crash(self):
         crash_rew = torch.zeros((self.num_envs,), device=self.device, dtype=gs.tc_float)
         crash_rew[self.crash_condition] = 1
         return crash_rew
-    
-    def _reward_target_touched(self):
-        target_touched_rew = torch.zeros((self.num_envs,), device=self.device, dtype=gs.tc_float)
-        target_touched_rew[self.target_touched] = 1
-        return target_touched_rew
 
     def get_observations(self):
         return self.obs_buf
